@@ -31,7 +31,7 @@ def get_git_hash():
     def _minimal_ext_cmd(cmd):
         # construct minimal environment
         env = {}
-        for k in ['SYSTEMROOT', 'PATH', 'HOME']:
+        for k in ['SYSTEMROOT', 'PATH', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH']:
             v = os.environ.get(k)
             if v is not None:
                 env[k] = v
@@ -39,22 +39,27 @@ def get_git_hash():
         env['LANGUAGE'] = 'C'
         env['LANG'] = 'C'
         env['LC_ALL'] = 'C'
-        out = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, env=env).communicate()[0]
-        return out
+        try:
+            out = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env).communicate()[0]
+            return out
+        except Exception:
+            return b''
 
     try:
         out = _minimal_ext_cmd(['git', 'rev-parse', 'HEAD'])
         sha = out.strip().decode('ascii')
-    except OSError:
+    except Exception:
         sha = 'unknown'
 
-    return sha
+    return sha if sha else 'unknown'
 
 
 def get_hash():
     if os.path.exists('.git'):
         sha = get_git_hash()[:7]
+        if not sha:
+            sha = 'unknown'
     elif os.path.exists(version_file):
         try:
             from basicsr.version import __version__
@@ -79,7 +84,10 @@ version_info = ({})
         SHORT_VERSION = f.read().strip()
     VERSION_INFO = ', '.join(
         [x if x.isdigit() else f'"{x}"' for x in SHORT_VERSION.split('.')])
-    VERSION = SHORT_VERSION + '+' + sha
+    if sha and sha != 'unknown':
+        VERSION = SHORT_VERSION + '+' + sha
+    else:
+        VERSION = SHORT_VERSION
 
     version_file_str = content.format(time.asctime(), VERSION, SHORT_VERSION,
                                       VERSION_INFO)
@@ -88,9 +96,10 @@ version_info = ({})
 
 
 def get_version():
+    version_vars = {}
     with open(version_file, 'r') as f:
-        exec(compile(f.read(), version_file, 'exec'))
-    return locals()['__version__']
+        exec(compile(f.read(), version_file, 'exec'), version_vars)
+    return version_vars['__version__']
 
 
 def make_cuda_ext(name, module, sources, sources_cuda=None):
@@ -128,9 +137,10 @@ def get_requirements(filename='requirements.txt'):
 
 
 if __name__ == '__main__':
-    if '--no_cuda_ext' in sys.argv:
+    if '--no_cuda_ext' in sys.argv or os.environ.get('NO_CUDA_EXT', '1') == '1' or os.environ.get('BASICSR_EXT', 'none') == 'none':
         ext_modules = []
-        sys.argv.remove('--no_cuda_ext')
+        if '--no_cuda_ext' in sys.argv:
+            sys.argv.remove('--no_cuda_ext')
     else:
         ext_modules = [
             make_cuda_ext(

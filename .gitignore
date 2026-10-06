@@ -7,3 +7,6 @@ logs/
 *.sh
 datasets
 basicsr.egg-info
+*.pth
+demo/*.png
+Thumbs.db
